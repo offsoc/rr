@@ -100,23 +100,4 @@ If you cannot connect to the Internet, please build a pre-compiled bootloader th
   - [synology-igc](https://github.com/jim3ma/synology-igc)
   - [intel-gpu-i915-backports](https://github.com/MoetaYuko/intel-gpu-i915-backports)
 
-### 7: Links & Community
 
-#### 7.1: Group
-
-- `QQ群1: 21609194` [`点击加入QQ群`](https://qm.qq.com/q/YTPvSXfeU0)
-- `QQ群2: 73119176` [`点击加入QQ群`](https://qm.qq.com/q/YV1B0NFvWK)
-- `QQ群3: 51929774` [`点击加入QQ群`](https://qm.qq.com/q/aVjM3Wb6KY)
-- `QQ群4: 49756829` [`点击加入QQ群`](https://qm.qq.com/q/9PHzmZDkqI)
-- `QQ群5: 30267817` [`点击加入QQ群`](https://qm.qq.com/q/6RgVDfOSXe)
-- `QQ群6: 68640297` [`点击加入QQ群`](https://qm.qq.com/q/PU71eSXAic)
-- `QQ Channel: RROrg` [`点击加入QQ频道`](https://pd.qq.com/s/aklqb0uij)
-- `Telegram Channel: RROrg` [`Click to join`](https://t.me/RR_Org)
-
-### 7: Sponsoring
-
-- <img src="https://raw.githubusercontent.com/wjz304/wjz304/master/my/buymeacoffee.png" width="700">
-
-### 8: License
-
-- [GPL-V3](https://github.com/RROrg/rr/blob/main/LICENSE)
