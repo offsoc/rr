@@ -123,6 +123,7 @@ CMDLINE['netif_num']="0"
 } # Sanity check
 [ -n "${MAC1}" ] && CMDLINE['mac1']="${MAC1}" && CMDLINE['netif_num']="1"
 [ -n "${MAC2}" ] && CMDLINE['mac2']="${MAC2}" && CMDLINE['netif_num']="2"
+CMDLINE['skip_vender_mac_interfaces']="$(seq -s, 0 $((${CMDLINE['netif_num']:-1} - 1)))"
 
 # set fixed cmdline
 if grep -q "force_junior" /proc/cmdline; then
@@ -163,7 +164,6 @@ fi
 
 CMDLINE["HddHotplug"]="1"
 CMDLINE["vender_format_version"]="2"
-CMDLINE['skip_vender_mac_interfaces']="0,1,2,3,4,5,6,7"
 CMDLINE['earlyprintk']=""
 CMDLINE['earlycon']="uart8250,io,0x3f8,115200n8"
 CMDLINE['console']="ttyS0,115200n8"
@@ -228,6 +228,13 @@ if echo "purley broadwellnkv2" | grep -wq "${PLATFORM}"; then
   CMDLINE["SASmodel"]="1"
 fi
 
+SSID="$(cat ${PART1_PATH}/wpa_supplicant.conf 2>/dev/null | grep 'ssid=' | cut -d'=' -f2 | sed 's/^"//; s/"$//')"
+PSK="$(cat ${PART1_PATH}/wpa_supplicant.conf 2>/dev/null | grep 'psk=' | cut -d'=' -f2 | sed 's/^"//; s/"$//')"
+if [ -n "${SSID}" ] && [ -n "${PSK}" ]; then
+  CMDLINE["wpa.ssid"]="${SSID}"
+  CMDLINE["wpa.psk"]="${PSK}"
+fi
+
 while IFS=': ' read -r KEY VALUE; do
   [ -n "${KEY}" ] && CMDLINE["network.${KEY}"]="${VALUE}"
 done <<<$(readConfigMap "network" "${USER_CONFIG_FILE}")
@@ -264,7 +271,7 @@ function _bootwait() {
       rm -f WB WC
       return 1
     fi
-    if false && [ -f "${WORK_PATH}/menu.lock" ]; then
+    if false && [ -f "${TMP_PATH}/menu.lock" ]; then
       printf "\r%$((${#MSG} * 2))s\n" " "
       printf "\r\033[1;33m%s\033[0m\n" "$(TEXT "Menu opened and booting is interrupted.")"
       rm -f WB WC
@@ -342,7 +349,7 @@ else
     MAC=$(cat /sys/class/net/${N}/address 2>/dev/null)
     printf "%s(%s): " "${N}" "${MAC}@${DRIVER}"
     while true; do
-      if [ ! "${N::3}" = "eth" ]; then
+      if false && [ ! "${N::3}" = "eth" ]; then
         printf "\r%s(%s): %s\n" "${N}" "${MAC}@${DRIVER}" "$(TEXT "IGNORE (Does not support non-wired network card.)")"
         break
       fi
@@ -405,7 +412,9 @@ else
     fi
   done
 
-  # # Unload all network interfaces
+  # Disconnect wireless
+  lsmod | grep -q iwlwifi && for N in $(ls /sys/class/net/ 2>/dev/null | grep wlan); do connectwlanif "${N}" 0 2>/dev/null; done
+  # Unload all network drivers
   # for D in $(realpath /sys/class/net/*/device/driver); do rmmod -f "$(basename ${D})" 2>/dev/null || true; done
 
   # Unload all graphics drivers
