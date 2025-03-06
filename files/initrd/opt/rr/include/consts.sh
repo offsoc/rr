@@ -1,4 +1,14 @@
-RR_VERSION="25.2.4"
+#!/usr/bin/env bash
+#
+# Copyright (C) 2022 Ing <https://github.com/wjz304>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+
+# shellcheck disable=SC2034
+
+RR_VERSION="25.3.0"
 RR_RELEASE=""
 RR_TITLE="RR v${RR_VERSION}"
 
