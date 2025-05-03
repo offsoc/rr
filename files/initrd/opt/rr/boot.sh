@@ -132,6 +132,7 @@ SN="$(readConfigKey "sn" "${USER_CONFIG_FILE}")"
 MAC1="$(readConfigKey "mac1" "${USER_CONFIG_FILE}")"
 MAC2="$(readConfigKey "mac2" "${USER_CONFIG_FILE}")"
 KERNELPANIC="$(readConfigKey "kernelpanic" "${USER_CONFIG_FILE}")"
+HDDSORT="$(readConfigKey "hddsort" "${USER_CONFIG_FILE}")"
 USBASINTERNAL="$(readConfigKey "usbasinternal" "${USER_CONFIG_FILE}")"
 EMMCBOOT="$(readConfigKey "emmcboot" "${USER_CONFIG_FILE}")"
 MODBLACKLIST="$(readConfigKey "modblacklist" "${USER_CONFIG_FILE}")"
@@ -142,15 +143,34 @@ declare -A CMDLINE
 CMDLINE['syno_hw_version']="${MODELID:-${MODEL}}"
 CMDLINE['vid']="${VID:-"0x46f4"}" # Sanity check
 CMDLINE['pid']="${PID:-"0x0001"}" # Sanity check
+
+if [ -z "${SN}" ]; then
+  SN="$(generateSerial "${MODEL}")"
+  writeConfigKey "sn" "${SN}" "${USER_CONFIG_FILE}"
+fi
 CMDLINE['sn']="${SN}"
 
-CMDLINE['netif_num']="0"
-[ -z "${MAC1}" ] && [ -n "${MAC2}" ] && {
-  MAC1=${MAC2}
-  MAC2=""
-} # Sanity check
-[ -n "${MAC1}" ] && CMDLINE['mac1']="${MAC1}" && CMDLINE['netif_num']="1"
-[ -n "${MAC2}" ] && CMDLINE['mac2']="${MAC2}" && CMDLINE['netif_num']="2"
+if [ -z "${MAC1}" ]; then
+  if [ -n "${MAC2}" ]; then
+    MAC1=${MAC2}
+    MAC2=""
+    writeConfigKey "mac1" "${MAC1}" "${USER_CONFIG_FILE}"
+    writeConfigKey "mac2" "${MAC2}" "${USER_CONFIG_FILE}"
+    CMDLINE['mac1']="${MAC1}"
+    CMDLINE['netif_num']="0"
+  else
+    NETIF_NUM=2
+    MACS="$(generateMacAddress "${MODEL}" ${NETIF_NUM})"
+    for I in $(seq 1 ${NETIF_NUM}); do
+      eval MAC${I}="$(echo ${MACS} | cut -d' ' -f${I})"
+      writeConfigKey "mac${I}" "$(echo ${MACS} | cut -d' ' -f${I})" "${USER_CONFIG_FILE}"
+    done
+    CMDLINE['mac1']="${MAC1}"
+    CMDLINE['mac2']="${MAC2}"
+    CMDLINE['netif_num']="${NETIF_NUM}"
+  fi
+fi
+
 CMDLINE['skip_vender_mac_interfaces']="$(seq -s, 0 $((${CMDLINE['netif_num']:-1} - 1)))"
 
 # set fixed cmdline
@@ -217,6 +237,9 @@ CMDLINE['nowatchdog']=""
 CMDLINE['modprobe.blacklist']="${MODBLACKLIST}"
 CMDLINE['mev']="${MEV:-physical}"
 
+if [ "${HDDSORT}" = "true" ]; then
+  CMDLINE['hddsort']=""
+fi
 if [ "${USBASINTERNAL}" = "true" ]; then
   CMDLINE['usbasinternal']=""
 fi
