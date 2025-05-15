@@ -314,11 +314,12 @@ function resizeImg() {
 
   sudo truncate -s ${SIZE}M "${OUTPUT_FILE}"
   echo -e "d\n\nn\n\n\n\n\nn\nw" | sudo fdisk "${OUTPUT_FILE}" >/dev/null 2>&1
-  local LOOPX
+  local LOOPX LOOPXPY
   LOOPX=$(sudo losetup -f)
   sudo losetup -P "${LOOPX}" "${OUTPUT_FILE}"
-  sudo e2fsck -fp "$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
-  sudo resize2fs "$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
+  LOOPXPY="$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
+  sudo e2fsck -fp "${LOOPXPY:-${LOOPX}p3}"
+  sudo resize2fs "${LOOPXPY:-${LOOPX}p3}"
   sudo losetup -d "${LOOPX}"
 }
 
@@ -329,7 +330,7 @@ function createvmx() {
   local BLIMAGE=${1}
   local VMNAME=${2}
 
-  if ! type qemu-img &>/dev/null; then
+  if ! type qemu-img >/dev/null 2>&1; then
     sudo apt install -y qemu-utils
   fi
 

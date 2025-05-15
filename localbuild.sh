@@ -39,7 +39,7 @@ function create() {
   sudo apt install -y locales busybox dialog gettext sed gawk jq curl
   sudo apt install -y python-is-python3 python3-pip libelf-dev qemu-utils dosfstools cpio xz-utils lz4 lzma bzip2 gzip zstd
   # sudo snap install yq
-  if ! type yq &>/dev/null || ! yq --version 2>/dev/null | grep -q "v4."; then
+  if ! type yq >/dev/null 2>&1 || ! yq --version 2>/dev/null | grep -q "v4."; then
     sudo curl -kL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && sudo chmod a+x /usr/bin/yq
   fi
 
@@ -239,11 +239,12 @@ function resize() {
 
   sudo truncate -s ${SIZE}M "${OUTPUT_FILE}"
   echo -e "d\n\nn\n\n\n\n\nn\nw" | sudo fdisk "${OUTPUT_FILE}" >/dev/null 2>&1
-  local LOOPX
+  local LOOPX LOOPXPY
   LOOPX=$(sudo losetup -f)
   sudo losetup -P "${LOOPX}" "${OUTPUT_FILE}"
-  sudo e2fsck -fp "$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
-  sudo resize2fs "$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
+  LOOPXPY="$(find "${LOOPX}p"* -maxdepth 0 2>/dev/null | sort -n | tail -1)"
+  sudo e2fsck -fp "${LOOPXPY:-${LOOPX}p3}"
+  sudo resize2fs "${LOOPXPY:-${LOOPX}p3}"
   sudo losetup -d "${LOOPX}"
 }
 
