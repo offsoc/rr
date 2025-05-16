@@ -12,9 +12,12 @@ set -e
 . "${WORK_PATH}/include/functions.sh"
 . "${WORK_PATH}/include/addons.sh"
 
-if type -p vmware-toolbox-cmd; then
-  if [ ! "Enabled" = "$(vmware-toolbox-cmd timesync status 2>/dev/null)" ]; then
+if type vmware-toolbox-cmd >/dev/null 2>&1; then
+  if [ "Disable" = "$(vmware-toolbox-cmd timesync status 2>/dev/null)" ]; then
     vmware-toolbox-cmd timesync enable >/dev/null 2>&1 || true
+  fi
+  if [ "Enabled" = "$(vmware-toolbox-cmd timesync status 2>/dev/null)" ]; then
+    vmware-toolbox-cmd timesync disable >/dev/null 2>&1 || true
   fi
 fi
 
@@ -97,12 +100,15 @@ if [ ! "LOCALBUILD" = "${LOADER_DISK}" ]; then
   for N in ${ETHX}; do
     MACR="$(cat "/sys/class/net/${N}/address" 2>/dev/null | sed 's/://g')"
     IPR="$(readConfigKey "network.${MACR}" "${USER_CONFIG_FILE}")"
-    if [ -n "${IPR}" ] && [ "1" = "$(cat "/sys/class/net/${N}/carrier" 2>/dev/null)" ]; then
+    if [ -n "${IPR}" ]; then
+      if [ ! "1" = "$(cat "/sys/class/net/${N}/carrier" 2>/dev/null)" ]; then
+        ip link set "${N}" up 2>/dev/null || true
+      fi
       IFS='/' read -r -a IPRA <<<"${IPR}"
-      ip addr flush dev "${N}"
-      ip addr add "${IPRA[0]}/${IPRA[1]:-"255.255.255.0"}" dev "${N}"
+      ip addr flush dev "${N}" 2>/dev/null || true
+      ip addr add "${IPRA[0]}/${IPRA[1]:-"255.255.255.0"}" dev "${N}" 2>/dev/null || true
       if [ -n "${IPRA[2]}" ]; then
-        ip route add default via "${IPRA[2]}" dev "${N}"
+        ip route add default via "${IPRA[2]}" dev "${N}" 2>/dev/null || true
       fi
       if [ -n "${IPRA[3]:-${IPRA[2]}}" ]; then
         sed -i "/nameserver ${IPRA[3]:-${IPRA[2]}}/d" /etc/resolv.conf
@@ -251,10 +257,10 @@ if [ "${DSMLOGO}" = "true" ] && [ -c "/dev/fb0" ] && [ ! "LOCALBUILD" = "${LOADE
   echo "${IP}" | grep -q "^169\.254\." && IP=""
   [ -n "${IP}" ] && URL="http://${IP}:${TTYD:-7681}" || URL="http://rr:${TTYD:-7681}"
   python3 "${WORK_PATH}/include/functions.py" makeqr -d "${URL}" -l "0" -o "${TMP_PATH}/qrcode_init.png"
-  [ -f "${TMP_PATH}/qrcode_init.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_init.png" >/dev/null 2>/dev/null || true
+  [ -f "${TMP_PATH}/qrcode_init.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_init.png" >/dev/null 2>&1 || true
 
   python3 "${WORK_PATH}/include/functions.py" makeqr -f "${WORK_PATH}/include/qhxg.png" -l "7" -o "${TMP_PATH}/qrcode_qhxg.png"
-  [ -f "${TMP_PATH}/qrcode_qhxg.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_qhxg.png" >/dev/null 2>/dev/null || true
+  [ -f "${TMP_PATH}/qrcode_qhxg.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_qhxg.png" >/dev/null 2>&1 || true
 fi
 
 # Check memory
