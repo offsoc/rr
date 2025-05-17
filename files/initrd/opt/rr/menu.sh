@@ -636,7 +636,7 @@ function addonMenu() {
       rm -f "${TMP_PATH}/menu"
       while read -r ADDON DESC; do
         arrayExistItem "${ADDON}" "${!ADDONS[@]}" && continue # Check if addon has already been added
-        echo "${ADDON} \"${DESC}\"" >>"${TMP_PATH}/menu"
+        echo "${ADDON} ${DESC}" >>"${TMP_PATH}/menu"
       done <<<"$(availableAddons "${PLATFORM}" "${KPRE:+${KPRE}-}${KVER}")"
       if [ ! -f "${TMP_PATH}/menu" ]; then
         DIALOG --title "$(TEXT "Addons")" \
@@ -690,15 +690,14 @@ function addonMenu() {
       touch "${PART1_PATH}/.build"
       ;;
     s)
-      MSG="$(TEXT "Name with color \"\Z4blue\Zn\" have been added, with color \"black\" are not added.\n")"
+      MSG="$(TEXT "Name with color \"\Z4blue\Zn\" have been added, with color \"\Z1red\Zn\" are not added.\n")"
       MSG+="\n"
-      while read -r MODULE DESC; do
-        if arrayExistItem "${MODULE}" "${!ADDONS[@]}"; then
-          MSG+="\Z4${MODULE}\Zn"
+      while read -r ADDON DESC; do
+        if arrayExistItem "${ADDON}" "${!ADDONS[@]}"; then
+          MSG+="\Z4${ADDON}:\Zn \Z5${DESC}\Zn\n"
         else
-          MSG+="${MODULE}"
+          MSG+="\Z1${ADDON}:\Z1 \Z5${DESC}\Zn\n"
         fi
-        MSG+=": \Z5${DESC}\Zn\n"
       done <<<"$(availableAddons "${PLATFORM}" "${KPRE:+${KPRE}-}${KVER}")"
       DIALOG --title "$(TEXT "Addons")" \
         --msgbox "${MSG}" 0 0
@@ -2132,8 +2131,13 @@ function initDSMNetwork {
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null)"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
-      rm -f "${TMP_PATH}/mdX/etc/sysconfig/network-scripts/ifcfg-bond"* "${TMP_PATH}/mdX/etc/sysconfig/network-scripts/ifcfg-eth"*
-      rm -f "${TMP_PATH}/mdX/etc.defaults/sysconfig/network-scripts/ifcfg-bond"* "${TMP_PATH}/mdX/etc.defaults/sysconfig/network-scripts/ifcfg-eth"*
+      for F in ${TMP_PATH}/mdX/etc/sysconfig/network-scripts/ifcfg-* ${TMP_PATH}/mdX/etc.defaults/sysconfig/network-scripts/ifcfg-*; do
+        [ ! -e "${F}" ] && continue
+        echo "${F}" | grep -Eq "\-lo$|\-tun$|\-eth99$" && continue
+        sed -i "s|^BOOTPROTO=.*|BOOTPROTO=dhcp|; s|^ONBOOT=.*|ONBOOT=yes|; s|^IPV6INIT=.*|IPV6INIT=dhcp|; /^IPADDR/d; /NETMASK/d; /GATEWAY/d; /DNS1/d; /DNS2/d" "${F}"
+      done
+      sed -i 's/_mtu=".*"$/_mtu="1500"/g' ${TMP_PATH}/mdX/etc/synoinfo.conf ${TMP_PATH}/mdX/etc.defaults/synoinfo.conf
+      # systemctl restart rc-network.service
       sync
       echo "true" >"${TMP_PATH}/isOk"
       umount "${TMP_PATH}/mdX"
