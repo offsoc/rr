@@ -8,7 +8,7 @@
 
 # shellcheck disable=SC2034
 
-RR_VERSION="25.8.0"
+RR_VERSION="25.8.1"
 RR_RELEASE=""
 RR_TITLE="RR v${RR_VERSION}"
 
@@ -38,6 +38,7 @@ RR_RAMUSER_FILE="${PART3_PATH}/initrd-rru"
 MC_RAMDISK_FILE="${PART3_PATH}/microcode.img"
 MOD_ZIMAGE_FILE="${PART3_PATH}/zImage-dsm"
 MOD_RDGZ_FILE="${PART3_PATH}/initrd-dsm"
+ADD_TIPS_FILE="${PART3_PATH}/AddTips"
 
 CKS_PATH="${PART3_PATH}/cks"
 LKMS_PATH="${PART3_PATH}/lkms"
