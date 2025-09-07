@@ -1225,7 +1225,7 @@ function synoinfoMenu() {
 # Extract linux and ramdisk files from the DSM .pat
 function getSynoExtractor() {
   rm -f "${LOG_FILE}"
-  mirrors=("global.synologydownload.com" "global.download.synology.com" "cndl.synology.cn")
+  mirrors=("global.download.synology.com" "global.synologydownload.com"  "cndl.synology.cn")
   fastest=$(_get_fastest "${mirrors[@]}")
   if [ $? -ne 0 ]; then
     echo -e "$(TEXT "The current network status is unknown, using the default mirror.")"
@@ -1368,7 +1368,7 @@ function extractDsmFiles() {
       CLEARCACHE=0
     fi
     mkdir -p "${PART3_PATH}/dl"
-    mirrors=("global.synologydownload.com" "global.download.synology.com" "cndl.synology.cn")
+    mirrors=("global.download.synology.com" "global.synologydownload.com"  "cndl.synology.cn")
     fastest=$(_get_fastest "${mirrors[@]}")
     if [ $? -ne 0 ]; then
       echo -e "$(TEXT "The current network status is unknown, using the default mirror.")"
@@ -1930,6 +1930,16 @@ function resetDSMPassword() {
       sed -i "/^${USER}:/ s/^\(${USER}:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:\)[^:]*:/\1:/" "${TMP_PATH}/mdX/etc/shadow"
       sed -i "s|status=on|status=off|g" "${TMP_PATH}/mdX/usr/syno/etc/packages/SecureSignIn/preference/${USER}/method.config" 2>/dev/null
       sed -i "s|list=*$|list=|; s|type=*$|type=none|" "${TMP_PATH}/mdX/usr/syno/etc/packages/SecureSignIn/secure_signin.conf" 2>/dev/null
+
+      mkdir -p "${TMP_PATH}/mdX/usr/rr/once.d"
+      {
+        echo "#!/usr/bin/env bash"
+        echo "synowebapi -s --exec api=SYNO.Core.OTP.EnforcePolicy method=set version=1 enable_otp_enforcement=false otp_enforce_option='\"none\"'"
+        echo "synowebapi -s --exec api=SYNO.SecureSignIn.AMFA.Policy method=set version=1 type='\"none\"'"
+				echo "synowebapi -s --exec api=SYNO.Core.SmartBlock method=set version=1 enabled=false untrust_try=5 untrust_minute=1 untrust_lock=30 trust_try=10 trust_minute=1 trust_lock=30"
+				echo "synowebapi -s --exec api=SYNO.SecureSignIn.Method.Admin method=reset version=1 account='\"${USER}\"' keep_amfa_settings=true"
+      } >"${TMP_PATH}/mdX/usr/rr/once.d/addNewDSMUser.sh"
+
       sync
       echo "true" >"${TMP_PATH}/isOk"
       umount "${TMP_PATH}/mdX"
