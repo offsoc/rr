@@ -28,7 +28,11 @@ flock -n 304 || {
   dialog --colors --aspect 50 --title "$(TEXT "Error")" --msgbox "${MSG}" 0 0
   exit 1
 }
-trap 'flock -u 304; rm -f "${TMP_PATH}/menu.lock"' EXIT INT TERM HUP
+cleanup_lock() {
+  flock -u 304
+  rm -f "${TMP_PATH}/menu.lock"
+}
+trap 'cleanup_lock' EXIT INT TERM HUP
 
 # Check partition 3 space, if < 2GiB is necessary clean cache folder
 SPACELEFT=$(df -m "${PART3_PATH}" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -2137,10 +2141,17 @@ function initDSMNetwork {
       [ $? -ne 0 ] && continue
       for F in ${TMP_PATH}/mdX/etc/sysconfig/network-scripts/ifcfg-* ${TMP_PATH}/mdX/etc.defaults/sysconfig/network-scripts/ifcfg-*; do
         [ ! -e "${F}" ] && continue
-        case "${F}" in
-        *ovs_* | *-bond*) rm -f "${F}" ;;
-        *-eth*)
-          ETHX=$(echo "${F}" | sed -E 's/.*ifcfg-(eth[0-9]+)$/\1/')
+        ETHX=$(echo "${F}" | sed -E 's/.*ifcfg-(.*)$/\1/')
+        case "${ETHX}" in
+        ovs_bond*)
+          rm -f "${F}"
+          ;;
+        ovs_eth*)
+          ovs-vsctl del-br ${ETHX}
+          sed -i "/${ETHX##ovs_}/"d ${TMP_PATH}/mdX/usr/syno/etc/synoovs/ovs_interface.conf
+          rm -f "${F}"
+          ;;
+        eth*)
           echo -e "DEVICE=${ETHX}\nONBOOT=yes\nBOOTPROTO=dhcp\nIPV6INIT=auto_dhcp\nIPV6_ACCEPT_RA=1" >"${F}"
           ;;
         *) ;;
@@ -4208,6 +4219,7 @@ else
         echo "b \"$(TEXT "Boot the loader")\""
       fi
       echo "h \"$(TEXT "Settings menu")\""
+      echo "r \"$(TEXT "Online Assistance")\""
       if [ "0$(du -sm "${PART3_PATH}/dl" 2>/dev/null | awk '{printf $1}')" -gt 1 ]; then
         echo "c \"$(TEXT "Clean disk cache")\""
       fi
@@ -4282,6 +4294,10 @@ else
       ;;
     h)
       settingsMenu
+      NEXT="m"
+      ;;
+    r)
+      cleanup_lock && exec "${WORK_PATH}/helper.sh"
       NEXT="m"
       ;;
     c)
@@ -4366,5 +4382,5 @@ else
   done
   clear
   echo -e "$(TEXT "Call \033[1;32mmenu.sh\033[0m to return to menu")"
-  ${WORK_PATH}/init.sh
+  "${WORK_PATH}/init.sh"
 fi

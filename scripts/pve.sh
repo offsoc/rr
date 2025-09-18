@@ -12,23 +12,27 @@ REPO="https://github.com/RROrg/rr"
 ONBOOT=1      # 开机启动，默认1
 EFI=1         # 启用 UEFI 引导，默认1
 BLTYPE="sata" # 引导盘类型， 支持 sata,usb,nvme 默认 sata
-NINEPPATH=""  # 9p路径，默认空不添加
+STORAGE=""    # 存储，默认自动获取
+V9PPATH=""    # 添加 virtio9p 挂载目录，默认空不添加
+VFSDIRID=""   # 添加 virtiofs 挂载文件夹id，默认空不添加
 TAG=""        # 镜像tag，默认自动获取
 IMG=""        # 本地镜像路径，默认空
 
-
 usage() {
-  echo "Usage: $0 [--onboot <0|1>] [--efi <0|1>] [--bltype <sata|usb|nvme>] [--9ppath <path>] [--tag <tag>] [--img <path>]"
-	echo "  --onboot <0|1>           Enable VM on boot, default 1 (enable)"
-	echo "  --efi <0|1>              Enable UEFI boot, default 1 (enable)"
-	echo "  --bltype <sata|usb|nvme> Bootloader disk type, default sata"
-	echo "  --9ppath <path>          Set to /path/to/9p to mount 9p share"
-	echo "  --tag <tag>              Image tag, download latest release if not set"
-	echo "  --img <path>             Local image path, use local image if set"
-  exit 1
+  echo "Usage: $0 [--onboot <0|1>] [--efi <0|1>] [--bltype <sata|usb|nvme>] [--storage <name>]"
+  echo "          [--v9ppath <path>] [--vfsdirid <dirid>] [--tag <tag>] [--img <path>]"
+  echo ""
+  echo "  --onboot <0|1>             Enable VM on boot, default 1 (enable)"
+  echo "  --efi <0|1>                Enable UEFI boot, default 1 (enable)"
+  echo "  --bltype <sata|usb|nvme>   Bootloader disk type, default sata"
+  echo "  --storage <name>           Storage name for images, as local-lvm, default auto get"
+  echo "  --v9ppath <path>           Set to /path/to/9p to mount virtio 9p share"
+  echo "  --vfsdirid <dirid>         Set to <dirid> to mount virtio fs share"
+  echo "  --tag <tag>                Image tag, download latest release if not set"
+  echo "  --img <path>               Local image path, use local image if set"
 }
 
-ARGS=$(getopt -o '' --long onboot:,efi:,bltype:,9ppath:,tag:,img: -n "$0" -- "$@")	
+ARGS=$(getopt -o '' --long onboot:,efi:,bltype:,storage:,v9ppath:,vfsdirid:,tag:,img: -n "$0" -- "$@")
 if [ $? -ne 0 ]; then
   usage
   exit 1
@@ -51,21 +55,29 @@ while true; do
     echo "$BLTYPE" | grep -qvE '^(sata|usb|nvme)$' && BLTYPE="sata"
     shift 2
     ;;
+  --storage)
+    STORAGE="$2"
+    [ -n "${STORAGE}" ] && pvesm status -content images | grep -qw "^${STORAGE}" || STORAGE=""
+    shift 2
+    ;;
+  --v9ppath)
+    V9PPATH="$2"
+    [ -d "${V9PPATH}" ] && V9PPATH="$(realpath "${V9PPATH}")" || V9PPATH=""
+    shift 2
+    ;;
+  --vfsdirid)
+    VFSDIRID="$2"
+    [ -n "${VFSDIRID}" ] && pvesh ls /cluster/mapping/dir | grep -qw "${VFSDIRID}" || VFSDIRID=""
+    shift 2
+    ;;
   --tag)
     TAG="$2"
-		[ "${TAG:0:1}" = "v" ] && TAG="${TAG:1}"
+    [ "${TAG:0:1}" = "v" ] && TAG="${TAG:1}"
     shift 2
     ;;
   --img)
     IMG="$2"
-		[ ! -f "${IMG}" ] && IMG=""
-		[ -n "${IMG}" ] && IMG="$(realpath "${IMG}")"
-    shift 2
-    ;;
-  --9ppath)
-    NINEPPATH="$2"
-		[ ! -d "${NINEPPATH}" ] && NINEPPATH=""
-		[ -z "${NINEPPATH}" ] || NINEPPATH="$(realpath "${NINEPPATH}")"
+    [ -f "${IMG}" ] && IMG="$(realpath "${IMG}")" || IMG=""
     shift 2
     ;;
   --)
@@ -106,7 +118,7 @@ else
   if ! command -v unzip >/dev/null 2>&1; then
     apt-get update >/dev/null 2>&1 && apt-get install -y unzip >/dev/null 2>&1
   fi
-  IMG_FILE=$(unzip -l "/tmp/rr-${TAG}.img.zip" | awk '{print $4}' | grep '\.img$' | head -n 1)
+  IMG_FILE=$(unzip -l "/tmp/rr-${TAG}.img.zip" | awk '{print $4}' | grep '\.img$' | head -1)
   if [ -z "${IMG_FILE}" ]; then
     echo "No img file found in rr-${TAG}.img.zip"
     exit 1
@@ -129,6 +141,7 @@ echo "Creating VM with RR ... "
 # 获取可用的 VMID
 VMID="$(($(qm list | awk 'NR>1{print $1}' | sort -n | tail -1 2>/dev/null || echo 99) + 1))"
 ARGS=""
+SATAIDX=0
 
 # 创建 VM
 qm create ${VMID} --name RR-DSM --machine q35 --ostype l26 --vga virtio --sockets 1 --cores 2 --cpu host --numa 0 --memory 4096 --scsihw virtio-scsi-single
@@ -137,9 +150,17 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# 获取 存储
+[ -z "${STORAGE}" ] && STORAGE=$(pvesm status -content images | awk 'NR>1 {print $1}' | grep local | tail -1)
+if [ -z "${STORAGE}" ]; then
+  echo "No storage for images"
+  qm destroy ${VMID} --purge
+  exit 1
+fi
+
 # 启用 UEFI 引导
 if [ "${EFI:-1}" -eq 1 ]; then
-  if ! qm set ${VMID} --bios ovmf --efidisk0 local-lvm:4,efitype=4m,pre-enrolled-keys=0; then
+  if ! qm set ${VMID} --bios ovmf --efidisk0 ${STORAGE}:4,efitype=4m,pre-enrolled-keys=0; then
     echo "Set UEFI failed"
     qm destroy ${VMID} --purge
     exit 1
@@ -147,12 +168,6 @@ if [ "${EFI:-1}" -eq 1 ]; then
 fi
 
 # 导入 RR 镜像
-STORAGE=$(pvesm status -content images | awk 'NR>1 {print $1}')
-if [ -z "${STORAGE}" ]; then
-	echo "No storage for images"
-	qm destroy ${VMID} --purge
-	exit 1
-fi
 BLDISK=$(qm importdisk ${VMID} "${IMG_PATH}" "${STORAGE}" | grep 'successfully imported disk' | sed -n "s/.*'\(.*\)'.*/\1/p")
 STATUS=$?
 if [ "${STATUS:-0}" -ne 0 ] || [ -z "${BLDISK}" ]; then
@@ -162,37 +177,37 @@ if [ "${STATUS:-0}" -ne 0 ] || [ -z "${BLDISK}" ]; then
 fi
 [ -n "${IMG}" ] || rm -f "${IMG_PATH}"
 case "${BLTYPE}" in
-	usb)
-			ARGS+="-device nec-usb-xhci,id=usb-bus0,multifunction=on -drive file=$(pvesm path ${BLDISK}),media=disk,format=raw,if=none,id=usb1 -device usb-storage,bus=usb-bus0.0,port=1,drive=usb1,bootindex=999,removable=on "
-		;;
-	nvme)
-			ARGS+="-drive file=$(pvesm path ${BLDISK}),media=disk,format=raw,if=none,id=nvme1 -device nvme,drive=nvme1,serial=nvme001 "
-		;;
-	sata)
-			qm set ${VMID} --sata0 "${BLDISK}"
-		;;
-	*)
-		echo "Setting bootloader disk failed"
-		qm destroy ${VMID} --purge
-		exit 1
-		;;
+usb)
+  ARGS+="-device nec-usb-xhci,id=usb-bus0,multifunction=on -drive file=$(pvesm path ${BLDISK}),media=disk,format=raw,if=none,id=usb1 -device usb-storage,bus=usb-bus0.0,port=1,drive=usb1,bootindex=999,removable=on "
+  ;;
+nvme)
+  ARGS+="-drive file=$(pvesm path ${BLDISK}),media=disk,format=raw,if=none,id=nvme1 -device nvme,drive=nvme1,serial=nvme001 "
+  ;;
+sata)
+  qm set ${VMID} --sata$((SATAIDX++)) "${BLDISK}"
+  ;;
+*)
+  echo "Setting bootloader disk failed"
+  qm destroy ${VMID} --purge
+  exit 1
+  ;;
 esac
 
 X86_VENDOR=$(awk -F: '/vendor_id/ {gsub(/^[ \t]+/, "", $2); print $2; exit}' /proc/cpuinfo)
 case "${X86_VENDOR,,}" in
-	*intel*)
-	ARGS+="-cpu host,+kvm_pv_eoi,+kvm_pv_unhalt,+vmx,hv_vendor_id=${X86_VENDOR} "
-		;;
-	*amd*)
-	ARGS+="-cpu host,+kvm_pv_eoi,+kvm_pv_unhalt,+svm,hv_vendor_id=${X86_VENDOR} "
-		;;
-	*)
-		echo "x86_vendor: Unknown"
-		;;	
+*intel*)
+  ARGS+="-cpu host,+kvm_pv_eoi,+kvm_pv_unhalt,+vmx,hv_vendor_id=${X86_VENDOR} "
+  ;;
+*amd*)
+  ARGS+="-cpu host,+kvm_pv_eoi,+kvm_pv_unhalt,+svm,hv_vendor_id=${X86_VENDOR} "
+  ;;
+*)
+  echo "x86_vendor: Unknown"
+  ;;
 esac
 
-if [ -d "${NINEPPATH}" ]; then
-	ARGS+="-fsdev local,security_model=passthrough,id=fsdev0,path=${NINEPPATH} -device virtio-9p-pci,id=fs0,fsdev=fsdev0,mount_tag=hostshare "
+if [ -d "${V9PPATH}" ]; then
+  ARGS+="-fsdev local,security_model=passthrough,id=fsdev0,path=${V9PPATH} -device virtio-9p-pci,id=fs0,fsdev=fsdev0,mount_tag=hostshare "
 fi
 
 qm set ${VMID} --args "${ARGS}"
@@ -202,10 +217,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# 添加 32G 数据盘
-qm set ${VMID} --sata1 local-lvm:32
+if [ -n "${VFSDIRID}" ]; then
+  # pvesh create /cluster/mapping/dir --id "${VFSDIRID}" -map node=node1,path=/path/to/share1 --map node=node2,path=/path/to/share2
+  qm set ${VMID} --virtiofs0 dirid=${VFSDIRID},cache=always,direct-io=1
+fi
 
-BRIDGE=$(awk -F: '/^iface vmbr/ {print $1}' /etc/network/interfaces | awk '{print $2}' | head -n 1)
+# 添加 32G 数据盘
+qm set ${VMID} --sata$((SATAIDX++)) ${STORAGE}:32
+
+BRIDGE=$(awk -F: '/^iface vmbr/ {print $1}' /etc/network/interfaces | awk '{print $2}' | head -1)
 if [ -z "${BRIDGE}" ]; then
   echo "Get bridge failed"
   qm destroy ${VMID} --purge
